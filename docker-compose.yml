@@ -1,0 +1,140 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: schedule
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/schema.sql:/opt/db/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d schedule"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq-init:
+    image: curlimages/curl:8.12.1
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_WORKER_USER: ${RABBITMQ_WORKER_USER}
+      RABBITMQ_WORKER_PASSWORD: ${RABBITMQ_WORKER_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      'curl -fsS
+      -u "$$RABBITMQ_DEFAULT_USER:$$RABBITMQ_DEFAULT_PASS"
+      -H "content-type: application/json"
+      -X PUT
+      "http://rabbitmq:15672/api/users/$$RABBITMQ_WORKER_USER"
+      -d "{\"password\":\"$$RABBITMQ_WORKER_PASSWORD\",\"tags\":\"\"}"
+      &&
+      curl -fsS
+      -u "$$RABBITMQ_DEFAULT_USER:$$RABBITMQ_DEFAULT_PASS"
+      -H "content-type: application/json"
+      -X PUT
+      "http://rabbitmq:15672/api/permissions/%2F/$$RABBITMQ_WORKER_USER"
+      -d "{\"configure\":\"^schedule.notifications$\",\"write\":\"\",\"read\":\"^schedule.notifications$\"}"'
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: schedule
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      CSRF_SECRET: ${CSRF_SECRET}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_API_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_API_PASSWORD: ${RABBITMQ_DEFAULT_PASS}
+      WORKER_TOKEN: ${WORKER_TOKEN}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_WORKER_USER: ${RABBITMQ_WORKER_USER}
+      RABBITMQ_WORKER_PASSWORD: ${RABBITMQ_WORKER_PASSWORD}
+      API_INTERNAL_URL: http://api:8000
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: schedule@example.local
+    depends_on:
+      rabbitmq-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

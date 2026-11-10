@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#172554">
+    <title>Расписание занятий</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+</head>
+
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="Schedule System — главная">
+                <span class="brand-mark">S</span>
+                <span><strong>Schedule</strong><small>УЧЕБНОЕ РАСПИСАНИЕ</small></span>
+            </a>
+            <div id="user-area" class="user-area" hidden>
+                <div class="user-meta"><strong id="user-name"></strong><span id="user-role"></span></div>
+                <button id="logout-button" class="button button-ghost button-small" type="button">Выйти</button>
+            </div>
+        </header>
+
+        <main>
+            <section id="login-view" class="login-layout" hidden>
+                <div class="login-intro">
+                    <span class="eyebrow">SCHEDULE SYSTEM</span>
+                    <h1>Ваше расписание<br><span>в одном месте.</span></h1>
+                    <p>Войдите, чтобы посмотреть занятия своей группы или управлять расписанием.</p>
+                    <div class="login-points"><span>● Актуальные занятия</span><span>● Публикация
+                            изменений</span><span>● Уведомления о расписании</span></div>
+                </div>
+                <form id="login-form" class="panel login-card">
+                    <div class="panel-heading"><span class="eyebrow">ДОБРО ПОЖАЛОВАТЬ</span>
+                        <h2>Вход в систему</h2>
+                        <p>Используйте выданные учётные данные.</p>
+                    </div>
+                    <label class="field"><span>Логин</span><input id="login" name="login" autocomplete="username"
+                            required maxlength="64" placeholder="Например, student_a"></label>
+                    <label class="field"><span>Пароль</span><input id="password" name="password" type="password"
+                            autocomplete="current-password" required maxlength="1024"
+                            placeholder="Введите пароль"></label>
+                    <p id="login-error" class="form-error" role="alert" hidden></p>
+                    <button class="button button-primary button-wide" type="submit"><span>Войти</span><span
+                            aria-hidden="true">→</span></button>
+                    <p class="login-hint">Соединение выполняется через защищённую серверную сессию.</p>
+                </form>
+            </section>
+
+            <section id="schedule-view" hidden>
+                <div class="page-heading">
+                    <div><span class="eyebrow">УЧЕБНЫЙ ПРОЦЕСС</span>
+                        <h1>Расписание занятий</h1>
+                        <p id="welcome-text">Все занятия в выбранном периоде.</p>
+                    </div>
+                    <div class="heading-actions"><button id="today-button" class="button button-secondary"
+                            type="button">Сегодня</button><button id="new-entry-button" class="button button-primary"
+                            type="button" hidden>＋ Новое занятие</button></div>
+                </div>
+
+                <section class="panel filters-panel" aria-label="Фильтры расписания">
+                    <div class="filter-title">
+                        <div>
+                            <h2>Период просмотра</h2>
+                            <p>Выберите даты, чтобы обновить список занятий.</p>
+                        </div><span id="result-count" class="result-count">—</span>
+                    </div>
+                    <form id="filter-form" class="filters-grid">
+                        <label class="field"><span>С даты</span><input id="date-from" type="date" required></label>
+                        <label class="field"><span>По дату</span><input id="date-to" type="date" required></label>
+                        <label class="field admin-filter" hidden><span>Учебная группа</span><select id="filter-group">
+                                <option value="">Все группы</option>
+                            </select></label>
+                        <div class="filter-submit"><button class="button button-primary" type="submit">Показать</button>
+                        </div>
+                    </form>
+                </section>
+
+                <section id="admin-editor" class="panel editor-panel" hidden>
+                    <div class="editor-heading">
+                        <div><span class="eyebrow">УПРАВЛЕНИЕ РАСПИСАНИЕМ</span>
+                            <h2 id="editor-title">Новое занятие</h2>
+                            <p id="editor-description">Создайте занятие. Оно будет сохранено как черновик.</p>
+                        </div><button id="close-editor-button" class="icon-button" type="button"
+                            aria-label="Закрыть форму">×</button>
+                    </div>
+                    <form id="entry-form">
+                        <input id="entry-id" type="hidden">
+                        <div class="editor-grid">
+                            <label class="field"><span>Дисциплина</span><select id="entry-subject"
+                                    required></select></label>
+                            <label class="field" id="entry-group-wrap"><span>Учебная группа</span><select
+                                    id="entry-group" required></select></label>
+                            <label class="field"><span>Преподаватель</span><select id="entry-teacher">
+                                    <option value="">Не назначен</option>
+                                </select></label>
+                            <label class="field"><span>Аудитория</span><select id="entry-room"
+                                    required></select></label>
+                            <label class="field"><span>Начало</span><input id="entry-start" type="datetime-local"
+                                    required></label>
+                            <label class="field"><span>Окончание</span><input id="entry-end" type="datetime-local"
+                                    required></label>
+                        </div>
+                        <div class="editor-footer">
+                            <p id="entry-error" class="form-error" role="alert" hidden></p>
+                            <div class="editor-buttons"><button id="cancel-editor-button" class="button button-ghost"
+                                    type="button">Отмена</button><button class="button button-primary"
+                                    type="submit">Сохранить черновик</button></div>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="schedule-section">
+                    <div class="section-heading">
+                        <div>
+                            <h2>Занятия</h2>
+                            <p id="period-label">Загрузка расписания…</p>
+                        </div><button id="refresh-button" class="button button-ghost button-small" type="button">↻
+                            Обновить</button>
+                    </div>
+                    <div id="schedule-list" class="schedule-list" aria-live="polite">
+                        <div class="empty-state">Загружаем расписание…</div>
+                    </div>
+                    <div class="pagination"><span id="page-info"></span>
+                        <div><button id="previous-page" class="button button-secondary button-small" type="button"
+                                disabled>← Назад</button><button id="next-page"
+                                class="button button-secondary button-small" type="button" disabled>Далее →</button>
+                        </div>
+                    </div>
+                </section>
+            </section>
+        </main>
+
+        <footer class="footer"><span>Schedule System</span><span>© Учебный проект · ЛР-3</span></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+
+</html>
