@@ -14,6 +14,34 @@ logger = logging.getLogger("schedule-worker")
 QUEUE_NAME = "schedule.notifications"
 
 
+def notify_calendar(schedule_id: str, event_type: str, schedule: dict) -> dict:
+    base = os.getenv("CALENDAR_BASE_URL", "http://calendar:8090")
+    api_key = os.environ["CALENDAR_API_KEY"]
+
+    action = "delete" if event_type == "SCHEDULE_CANCELLED" else "upsert"
+
+    resp = requests.post(
+        f"{base}/api/v1/events",
+        json={
+            "scheduleEntryId": schedule_id,
+            "action": action,
+            "event": {
+                "subject": schedule["subject"],
+                "group": schedule["group"],
+                "startsAt": schedule["startsAt"],
+                "endsAt": schedule["endsAt"],
+                "building": schedule["building"],
+                "room": schedule["room"],
+                "teacher": schedule["teacher"],
+            },
+        },
+        headers={"X-Api-Key": api_key},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def process_event(event: dict) -> None:
     event_type = event.get("eventType")
     schedule_id = event.get("scheduleId")
@@ -52,6 +80,17 @@ def process_event(event: dict) -> None:
     response.raise_for_status()
 
     schedule = response.json()
+
+    # Календарь
+    cal = notify_calendar(schedule_id, event_type, schedule)
+    logger.info(
+        "Calendar sync: scheduleId=%s action=%s externalEventId=%s status=%s",
+        schedule_id,
+        "delete" if event_type == "SCHEDULE_CANCELLED" else "upsert",
+        cal.get("externalEventId"),
+        cal.get("status"),
+    )
+
     recipients = schedule.get("recipients", [])
 
     if not recipients:
@@ -113,10 +152,13 @@ def main() -> None:
                 except Exception:
                     logger.exception("Не удалось обработать событие")
                     # Сообщение останется в очереди и будет обработано повторно
-                    ch.basic_nack(
-                        delivery_tag=method.delivery_tag,
-                        requeue=True,
-                    )
+                    deaths = properties.headers.get(
+                        "x-death", []) if properties.headers else []
+                    if deaths and deaths[0].get("count", 0) >= 5:
+                        logger.error("Cообщение отброшено после 5 попыток")
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    else:
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
             channel.basic_consume(
                 queue=QUEUE_NAME,

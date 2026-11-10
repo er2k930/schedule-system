@@ -116,12 +116,16 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       SMTP_FROM: schedule@example.local
+      CALENDAR_BASE_URL: http://calendar:8090
+      CALENDAR_API_KEY: ${CALENDAR_API_KEY}
     depends_on:
-      rabbitmq-init:
-        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
       api:
         condition: service_healthy
       mailpit:
+        condition: service_started
+      calendar:
         condition: service_started
     restart: unless-stopped
 
@@ -134,6 +138,14 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
+
+  calendar:
+    build: ./calendar
+    environment:
+      CALENDAR_API_KEY: ${CALENDAR_API_KEY}
+    ports:
+      - "8090:8090"
     restart: unless-stopped
 
 volumes:
